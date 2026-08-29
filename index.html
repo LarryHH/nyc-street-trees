@@ -50,7 +50,7 @@
         line-height: 1.25;
         text-shadow: 0 1px 8px #000;
       }
-      #title span {
+      #title .t-sub {
         display: block;
         font-size: 13px;
         font-weight: 500;
@@ -345,6 +345,116 @@
       #attribution a:hover {
         text-decoration: underline;
       }
+
+      /* Button that opens the stats panel on small screens. Hidden on wide
+     screens, where the panel is always visible. */
+      #panel-toggle {
+        display: none;
+        position: fixed;
+        left: 14px;
+        top: 14px;
+        z-index: 12;
+        width: 42px;
+        height: 42px;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 1px solid rgba(120, 200, 150, 0.3);
+        border-radius: 10px;
+        background: rgba(9, 20, 15, 0.72);
+        color: #bfe6cf;
+        cursor: pointer;
+        backdrop-filter: blur(7px);
+        -webkit-backdrop-filter: blur(7px);
+        box-shadow: 0 4px 16px #0007;
+      }
+      #panel-toggle svg {
+        display: block;
+      }
+      #panel-toggle .ic-close {
+        display: none;
+      }
+      body.panel-open #panel-toggle .ic-open {
+        display: none;
+      }
+      body.panel-open #panel-toggle .ic-close {
+        display: block;
+      }
+
+      /* Two titles: the full one by default, a short one on small screens. */
+      #title .t-short {
+        display: none;
+      }
+
+      /* Short screens: let a tall panel scroll rather than run off-screen. */
+      @media (max-height: 560px) {
+        #panel {
+          max-height: calc(100vh - 112px);
+          overflow-y: auto;
+          overflow-x: hidden;
+        }
+      }
+
+      /* Small screens: hide the panel behind the toggle, shrink the top bar so
+     the title and legend can't collide, and lay the credits along the bottom. */
+      @media (max-width: 720px) {
+        #panel-toggle {
+          display: flex;
+        }
+        #title {
+          left: 66px;
+          top: 16px;
+          font-size: 15px;
+        }
+        #title .t-full,
+        #title .t-sub {
+          display: none;
+        }
+        #title .t-short {
+          display: inline;
+        }
+        #legend {
+          top: 16px;
+          font-size: 11px;
+        }
+        #legend .bar,
+        #legend .ends {
+          width: 108px;
+        }
+        #legend .size {
+          font-size: 9px;
+        }
+        #panel {
+          top: 66px;
+          left: 12px;
+          width: min(258px, 84vw);
+          max-height: calc(100vh - 150px);
+          overflow-y: auto;
+          overflow-x: hidden;
+          transform: translateX(calc(-100% - 24px));
+          transition: transform 0.25s ease;
+        }
+        body.panel-open #panel {
+          transform: translateX(0);
+        }
+        #hint {
+          display: none;
+        }
+        #modes {
+          bottom: 58px;
+        }
+        #attribution {
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: auto;
+          max-width: none;
+          transform: none;
+          border-radius: 0;
+          padding: 5px 12px;
+          font-size: 10px;
+        }
+      }
     </style>
     <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
     <script src="trees_data.js"></script>
@@ -353,9 +463,45 @@
   <body>
     <div id="sky"></div>
     <div id="vignette"></div>
+    <button
+      id="panel-toggle"
+      type="button"
+      aria-label="Show data panel"
+      aria-expanded="false"
+    >
+      <svg
+        class="ic-open"
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="9"></circle>
+        <line x1="12" y1="11" x2="12" y2="16.5"></line>
+        <circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"></circle>
+      </svg>
+      <svg
+        class="ic-close"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      >
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+      </svg>
+    </button>
     <div id="title">
-      Every street tree in New York
-      <span>height &amp; colour = trees per block</span>
+      <span class="t-full">Every street tree in New York</span>
+      <span class="t-short">NYC street trees</span>
+      <span class="t-sub">height &amp; colour = trees per block</span>
     </div>
     <div id="panel">
       <div class="big"><span id="p-total">…</span> trees</div>
@@ -653,7 +799,11 @@
         ly = 0;
       addEventListener("pointerdown", (e) => {
         if (mode !== "orbit" || e.button !== 0) return;
-        if (e.target.closest("#modes,#legend,#title,#panel,#hint,#attribution"))
+        if (
+          e.target.closest(
+            "#modes,#legend,#title,#panel,#hint,#attribution,#panel-toggle",
+          )
+        )
           return; // let the UI work
         dragging = true;
         lx = e.clientX;
@@ -787,6 +937,27 @@
   </div>`,
         )
         .join("");
+
+      // --- Small-screen stats panel toggle -----------------------------------
+      // On narrow screens the panel is hidden; this button slides it in and out.
+      const panelToggle = document.getElementById("panel-toggle");
+      const setPanelOpen = (open) => {
+        document.body.classList.toggle("panel-open", open);
+        panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        panelToggle.setAttribute(
+          "aria-label",
+          open ? "Hide data panel" : "Show data panel",
+        );
+      };
+      panelToggle.addEventListener("click", () =>
+        setPanelOpen(!document.body.classList.contains("panel-open")),
+      );
+      // Tapping the map, i.e. anything outside the panel and its button, closes it.
+      document.addEventListener("click", (e) => {
+        if (!document.body.classList.contains("panel-open")) return;
+        if (e.target.closest("#panel, #panel-toggle")) return;
+        setPanelOpen(false);
+      });
     </script>
   </body>
 </html>
