@@ -318,6 +318,33 @@
         text-align: right;
         text-shadow: 0 1px 4px #000;
       }
+      /* Data and basemap credits. The Esri basemap requires an on-screen
+     attribution; the rest is here as good practice. */
+      #attribution {
+        position: fixed;
+        left: 50%;
+        bottom: 6px;
+        transform: translateX(-50%);
+        z-index: 10;
+        max-width: min(660px, 62vw);
+        text-align: center;
+        font-size: 10.5px;
+        line-height: 1.4;
+        color: #7fa891;
+        text-shadow: 0 1px 3px #000;
+        background: rgba(7, 11, 14, 0.5);
+        padding: 4px 12px;
+        border-radius: 7px;
+        backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
+      }
+      #attribution a {
+        color: #9fd6b4;
+        text-decoration: none;
+      }
+      #attribution a:hover {
+        text-decoration: underline;
+      }
     </style>
     <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
     <script src="trees_data.js"></script>
@@ -364,6 +391,24 @@
     <div id="modes">
       <button id="m-pan" class="on">Pan</button
       ><button id="m-orbit">Orbit</button>
+    </div>
+    <div id="attribution">
+      Tree data:
+      <a
+        href="https://data.cityofnewyork.us/Environment/2015-Street-Tree-Census-Tree-Data/uvpi-gqnh"
+        target="_blank"
+        rel="noopener"
+        >NYC Street Tree Census 2015</a
+      >
+      · Basemap: Esri, HERE, Garmin,
+      <a
+        href="https://www.openstreetmap.org/copyright"
+        target="_blank"
+        rel="noopener"
+        >© OpenStreetMap contributors</a
+      >
+      · Built with
+      <a href="https://deck.gl" target="_blank" rel="noopener">deck.gl</a>
     </div>
     <script>
       const {
@@ -608,7 +653,8 @@
         ly = 0;
       addEventListener("pointerdown", (e) => {
         if (mode !== "orbit" || e.button !== 0) return;
-        if (e.target.closest("#modes,#legend,#title,#panel,#hint")) return; // let the UI work
+        if (e.target.closest("#modes,#legend,#title,#panel,#hint,#attribution"))
+          return; // let the UI work
         dragging = true;
         lx = e.clientX;
         ly = e.clientY;

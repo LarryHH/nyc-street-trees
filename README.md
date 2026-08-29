@@ -44,8 +44,14 @@ terminal to stop the server when you are done.
 
 - Tree data: [NYC Street Tree Census, 2015](https://data.cityofnewyork.us/Environment/2015-Street-Tree-Census-Tree-Data/uvpi-gqnh),
   published by the NYC Department of Parks and Recreation on NYC Open Data.
-- Basemap tiles: Esri Dark Gray Canvas.
-- Rendering: [deck.gl](https://deck.gl).
+- Basemap tiles: Esri "Dark Gray Canvas" (World Dark Gray Base). Esri asks that
+  the basemap be credited as: Esri, HERE, Garmin,
+  [© OpenStreetMap contributors](https://www.openstreetmap.org/copyright), and
+  the GIS user community.
+- Rendering: [deck.gl](https://deck.gl), MIT licensed.
+
+These credits are also shown on the page itself, along the bottom edge, which is
+where the Esri basemap attribution is required to appear.
 
 The population figure used for the per-capita fact is the New York City census
 estimate for the same period.
