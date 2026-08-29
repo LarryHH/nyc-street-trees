@@ -272,6 +272,12 @@
         margin-left: auto;
         color: #8fb8a2;
       }
+      #legend .size {
+        margin-top: 5px;
+        font-size: 11px;
+        font-weight: 500;
+        color: #8fb8a2;
+      }
       #modes {
         position: fixed;
         right: 22px;
@@ -352,6 +358,7 @@
       trees in each cell
       <div class="bar"></div>
       <div class="ends"><span>few</span><span>many</span></div>
+      <div class="size" id="legend-size"></div>
     </div>
     <div id="hint">drag to pan · scroll to zoom</div>
     <div id="modes">
@@ -380,6 +387,10 @@
         [74, 222, 128],
         [190, 242, 100],
       ];
+
+      // Radius of each hexagon bin, in metres (centre to corner). Used both for
+      // the map's binning and for the legend text, so the two can't disagree.
+      const CELL_RADIUS = 130;
 
       // Lighting: soft ambient fill plus a key light that casts shadows, so the
       // columns read as solid 3-D towers rather than flat bars.
@@ -574,7 +585,7 @@
             id: "trees",
             data: TREES,
             getPosition: (d) => d,
-            radius: 130, // each hexagon covers ~130 m
+            radius: CELL_RADIUS, // metres, centre to corner
             coverage: 0.92,
             elevationScale: 11,
             extruded: true,
@@ -647,6 +658,10 @@
       // --- Populate the left stats panel from STATS --------------------------
       const fmt = (n) => n.toLocaleString();
       const pct = (a, b) => Math.round((a / b) * 100);
+
+      // Legend: state how wide one hexagon is (corner to corner ≈ 2 × radius).
+      document.getElementById("legend-size").textContent =
+        `each cell ≈ ${CELL_RADIUS * 2} m across`;
 
       document.getElementById("p-total").textContent = fmt(STATS.total);
       document.getElementById("p-species").textContent = STATS.distinctSpecies;
