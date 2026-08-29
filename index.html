@@ -371,7 +371,7 @@
         display: flex;
         position: fixed;
         left: 14px;
-        top: 14px;
+        top: 22px; /* centred on the two-line title block; narrow screens reset this */
         z-index: 12;
         width: 42px;
         height: 42px;
@@ -417,6 +417,9 @@
       /* Small screens: hide the panel behind the toggle, shrink the top bar so
      the title and legend can't collide, and lay the credits along the bottom. */
       @media (max-width: 720px) {
+        #panel-toggle {
+          top: 14px;
+        }
         #title {
           top: 16px;
           font-size: 15px;
