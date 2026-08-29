@@ -2,9 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- Tells phones to use the real device width instead of pretending to be a
+         wide desktop, which is what makes the responsive layout below work. -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>A city of trees</title>
+    <!--
+      How this page is put together, visually:
+      - deck.gl fills the whole window with the interactive 3-D map (its <canvas>
+        is added by JavaScript at the bottom of <body>).
+      - Everything else - the title, the stats panel, the legend, the buttons -
+        is plain HTML layered ON TOP with `position: fixed`, which pins an element
+        to a spot on the screen regardless of the map underneath.
+      - `z-index` decides what stacks above what (higher = closer to the viewer).
+      The rules below are grouped by the on-screen element they style.
+    -->
     <style>
+      /* Full-window canvas with no scrollbars: the map, not the page, scrolls. */
       html,
       body {
         margin: 0;
@@ -469,6 +482,18 @@
         }
       }
     </style>
+    <!--
+      These three <script> tags load BEFORE the app code at the bottom of the
+      page, and order matters. A script that defines a variable makes it
+      available to every script that runs after it, so the data must come first:
+        1. deck.gl  - the mapping library (downloaded from a CDN). It gives us
+                      the global `deck` object used to draw the 3-D map.
+        2. trees_data.js  - defines `TREES`: one [longitude, latitude] pair per
+                             street tree (~684,000 of them).
+        3. city_extras.js - defines `STATS` (summary numbers for the side panel)
+                            and `BOROUGHS` / `CITY` (map outlines).
+      The app script near the bottom of <body> then reads all of these.
+    -->
     <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
     <script src="trees_data.js"></script>
     <script src="city_extras.js"></script>
@@ -495,7 +520,13 @@
       >
         <circle cx="12" cy="12" r="9"></circle>
         <line x1="12" y1="11" x2="12" y2="16.5"></line>
-        <circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"></circle>
+        <circle
+          cx="12"
+          cy="7.8"
+          r="1.1"
+          fill="currentColor"
+          stroke="none"
+        ></circle>
       </svg>
       <svg
         class="ic-close"
@@ -530,9 +561,7 @@
           <ol class="sub" id="p-species-list"></ol>
         </div>
         <div class="fact"><b id="p-alive">…</b> alive and standing</div>
-        <div class="fact">
-          average trunk <b id="p-trunk">…</b> across
-        </div>
+        <div class="fact">average trunk <b id="p-trunk">…</b> across</div>
         <div class="fact">
           about <b id="p-percap">…</b> street tree for every
           <b id="p-percap-n">…</b> New Yorkers
@@ -570,6 +599,28 @@
       <a href="https://deck.gl" target="_blank" rel="noopener">deck.gl</a>
     </div>
     <script>
+      /*
+       * ===========================================================================
+       *  NYC street-tree map - the whole app lives in this one script.
+       * ===========================================================================
+       *  Big picture of what happens below, in order:
+       *    1. Pull the pieces we need out of the deck.gl library.
+       *    2. Set up lighting so the 3-D columns look solid.
+       *    3. Create the DeckGL map and fence in how far the user can pan/zoom.
+       *    4. Build the map "layers": the street basemap, the city/borough
+       *       outlines, and the HexagonLayer that bins the trees into 3-D towers.
+       *    5. Add mouse/touch interaction (pan, orbit) and a gentle auto-spin.
+       *    6. Fill in the text side panel from the STATS summary numbers.
+       *    7. Wire up the collapsible panel toggle.
+       *
+       *  A note on coordinates: everywhere in this file a position is written as
+       *  [longitude, latitude] (east-west first, then north-south). New York City
+       *  is near longitude -73.9, latitude 40.7.
+       */
+
+      // deck.gl exposes everything through one global object, `deck`. This is
+      // "object destructuring": it copies these named properties into their own
+      // local constants so we can write `MapView` instead of `deck.MapView`.
       const {
         DeckGL,
         MapView,
@@ -583,6 +634,9 @@
         LightingEffect,
       } = deck;
 
+      // The colour ramp for the towers, from dark green (few trees) to lime
+      // (many). Each entry is a colour written as [red, green, blue], where every
+      // channel runs 0-255 - the same numbers you would use in CSS rgb().
       const GREENS = [
         [8, 32, 24],
         [14, 74, 45],
@@ -615,8 +669,11 @@
       lighting.shadowColor = [0, 0, 0, 0.45];
 
       // --- interaction modes -------------------------------------------------
-      // Orbit: a plain drag rotates + tilts (handled below). Pan: a plain drag
-      // pans (deck's native behaviour). Scroll zooms in both.
+      // Two ways to explore the map, chosen with the buttons in the corner:
+      //   Orbit: a plain drag rotates + tilts (handled by our own code below).
+      //   Pan:   a plain drag slides the map around (deck.gl does this for us).
+      // Scroll zooms in both. `controllerFor` returns the settings deck.gl needs
+      // for the current mode - which drag gestures to allow, which to ignore.
       let mode = "pan";
       const controllerFor = (m) =>
         m === "pan"
@@ -639,27 +696,41 @@
               inertia: false,
             };
 
-      // Fence the camera so the map always fills the frame and the void stays off-screen.
+      // Fence the camera so the map always fills the frame and the empty area
+      // around the city stays off-screen. These are the furthest the centre of
+      // the map is allowed to travel, in longitude/latitude degrees.
       const PAN = {
         minLng: -74.26,
         maxLng: -73.68,
         minLat: 40.53,
         maxLat: 40.9,
       };
+      // How far the user may zoom and tilt. `pitch` is the tilt away from
+      // straight-down: 0 = looking straight down, 60 = a steep angled view.
       const LIMITS = { minZoom: 9.9, maxZoom: 12.5, minPitch: 0, maxPitch: 60 }; // controller enforces these
-      // Normalise any view: re-attach the limits and clamp the pan into bounds.
+      // `norm` ("normalise") takes any proposed camera view and makes it legal:
+      // it re-attaches the zoom/tilt limits and uses Math.min/Math.max to "clamp"
+      // the centre back inside the PAN box if a drag tried to push it too far.
       const norm = (v) => ({
         ...v,
         ...LIMITS,
         longitude: Math.min(PAN.maxLng, Math.max(PAN.minLng, v.longitude)),
         latitude: Math.min(PAN.maxLat, Math.max(PAN.minLat, v.latitude)),
       });
-      // Single place that pushes a view to the screen, so nothing fights over it.
+      // The ONE function that moves the camera. Routing every change through here
+      // (instead of setting the view in several places) keeps things predictable.
       const applyView = (v) => {
         view = norm(v);
         deckgl.setProps({ viewState: view });
       };
 
+      // `view` is the camera's current state - where it looks and from what angle.
+      //   longitude/latitude: the point at the centre of the screen
+      //   zoom:    how close in we are (bigger = closer)
+      //   bearing: compass rotation in degrees (which way is "up")
+      //   pitch:   tilt, as described above
+      // `touched` becomes true the first time the user interacts, which stops the
+      // auto-spin (see the tick() loop below).
       let view = {
           longitude: -73.94,
           latitude: 40.7,
@@ -669,17 +740,23 @@
           ...LIMITS,
         },
         touched = false;
+      // Create the map itself. `new DeckGL({...})` builds the map and attaches it
+      // to the page; the object we pass sets all of its options.
       const deckgl = new DeckGL({
-        parent: document.body,
+        parent: document.body, // add the map's canvas to the page
         views: new MapView(),
-        initialViewState: view,
-        controller: controllerFor(mode),
+        initialViewState: view, // where the camera starts
+        controller: controllerFor(mode), // which drag/scroll gestures are allowed
         effects: [lighting],
         parameters: { clearColor: [0.027, 0.043, 0.055, 1] }, // dark cool ground behind the map
+        // deck.gl calls this every time the user pans/zooms. We record that the
+        // user has interacted, then push the new (fenced) view back to the map.
         onViewStateChange: ({ viewState }) => {
           touched = true;
           applyView(viewState);
         }, // apply once, fenced, no per-frame re-apply
+        // A tooltip is the little box that appears when you hover a tower. deck.gl
+        // hands us the hovered `object`; we return HTML to show, or nothing.
         getTooltip: ({ object }) =>
           object &&
           object.points && {
@@ -694,8 +771,14 @@
           },
       });
 
-      // A minimal dark, label-light street map (Esri Dark Gray Canvas, no API key),
-      // sitting flat under the towers. Note Esri's tile path is {z}/{y}/{x}.
+      // deck.gl draws the map as a stack of "layers", each one responsible for
+      // drawing a different thing. We build them one at a time here, then hand the
+      // finished list to the map further down. First up: the basemap.
+      //
+      // A TileLayer downloads the background street map as many small square
+      // images ("tiles") and pieces them together, loading only the tiles that
+      // are currently on screen. This one is Esri's dark canvas (no API key
+      // needed). Esri's tile address uses the pattern {z}/{y}/{x} (zoom/row/col).
       const NYC_EXTENT = [-75.3, 39.8, -72.6, 41.7]; // generous, but bounded so tilted views don't chase the horizon
       const basemap = new TileLayer({
         id: "basemap",
@@ -708,6 +791,11 @@
         maxCacheSize: 900, // keep lots of tiles so panning back within bounds never refetches
         maxRequests: 8,
         extent: NYC_EXTENT, // don't try to load the whole horizon when tilted
+        // For each downloaded tile image, deck.gl asks us how to draw it. We wrap
+        // it in a BitmapLayer and tell that layer the tile's geographic corners
+        // (west, south, east, north) so the image lands in the right place. The
+        // `t.bbox ? ... : ...` is a ternary - a compact if/else - that copes with
+        // two slightly different shapes deck.gl may use for the tile's bounds.
         renderSubLayers: (props) => {
           const t = props.tile;
           const b = t.bbox
@@ -726,8 +814,11 @@
         },
       });
 
-      // Outlines on the ground: borough borders (medium), and the whole city
-      // coastline (strongest) so New York reads as one shape.
+      // Outlines on the ground, drawn from GeoJSON (a standard text format for
+      // map shapes). A GeoJsonLayer can fill and/or stroke those shapes; here we
+      // only stroke (outline) them. We draw three: the borough borders (medium),
+      // a soft wide "glow" behind the coastline, and the crisp city coastline on
+      // top - so New York reads as one shape lifted off the background.
       const boroughOutline = new GeoJsonLayer({
         id: "boroughs",
         data: BOROUGHS,
@@ -755,6 +846,8 @@
         lineWidthUnits: "pixels",
         getLineWidth: 2.6,
       });
+      // The five borough names and where to place each one (`p` is its
+      // [longitude, latitude]). A TextLayer draws one label per item in this list.
       const BOROUGH_LABELS = [
         { name: "QUEENS", p: [-73.82, 40.71] },
         { name: "BROOKLYN", p: [-73.95, 40.652] },
@@ -762,6 +855,8 @@
         { name: "THE BRONX", p: [-73.865, 40.845] },
         { name: "MANHATTAN", p: [-73.968, 40.782] },
       ];
+      // The `get...` options are "accessors": functions deck.gl runs once per data
+      // item to ask "what text? what position?". `d` is one entry from the list.
       const boroughLabels = new TextLayer({
         id: "borough-labels",
         data: BOROUGH_LABELS,
@@ -779,39 +874,55 @@
         parameters: { depthTest: false }, // draw over the towers instead of being hidden behind them
       });
 
+      // Hand the finished layer list to the map. Order = draw order: the first
+      // layer is at the bottom, each later one on top. So the basemap sits under
+      // the outlines, the tree towers rise above those, and the labels sit on top.
       deckgl.setProps({
         layers: [
           basemap,
           cityGlow,
           boroughOutline,
           cityOutline,
+          // The star of the map. A HexagonLayer takes our ~684,000 tree points and
+          // automatically groups them into a honeycomb grid: every point that
+          // falls in the same hexagon is counted together. `extruded: true` then
+          // raises each hexagon into a 3-D tower whose HEIGHT and COLOUR both grow
+          // with the number of trees in that cell - so tall + lime = tree-dense.
           new HexagonLayer({
             id: "trees",
             data: TREES,
-            getPosition: (d) => d,
-            radius: CELL_RADIUS, // metres, centre to corner
-            coverage: 0.92,
-            elevationScale: 11,
-            extruded: true,
-            colorRange: GREENS,
+            getPosition: (d) => d, // each tree IS its [lng, lat], so return it as-is
+            radius: CELL_RADIUS, // size of each hexagon, in metres (centre to corner)
+            coverage: 0.92, // draw each tower at 92% width, leaving thin gaps
+            elevationScale: 11, // multiplier turning the tree count into a height
+            extruded: true, // 3-D towers instead of a flat 2-D heatmap
+            colorRange: GREENS, // few -> many maps onto our dark-green -> lime ramp
             material: {
               ambient: 0.64,
               diffuse: 0.6,
               shininess: 32,
               specularColor: [45, 60, 50],
             },
-            pickable: true,
+            pickable: true, // allow hovering a tower (needed for the tooltip)
           }),
           boroughLabels,
         ],
       });
 
-      // Orbit drag: I own the view, so I turn a left-drag into bearing + pitch.
+      // Orbit drag. In orbit mode we handle the drag ourselves so we can turn
+      // sideways movement into rotation and up/down movement into tilt. We listen
+      // for three "pointer" events (pointer = mouse or finger): press, move,
+      // release. `addEventListener("name", fn)` says "run fn whenever this
+      // happens". `lx`/`ly` remember the last pointer position between moves.
       let dragging = false,
         lx = 0,
         ly = 0;
       addEventListener("pointerdown", (e) => {
+        // Ignore this press unless we're in orbit mode and it's the left button.
         if (mode !== "orbit" || e.button !== 0) return;
+        // `closest` walks up from what was clicked looking for any of these UI
+        // elements; if the press landed on one, let the button/panel handle it
+        // instead of starting a map drag.
         if (
           e.target.closest(
             "#modes,#legend,#title,#panel,#hint,#attribution,#panel-toggle",
@@ -824,27 +935,34 @@
         touched = true;
       });
       addEventListener("pointermove", (e) => {
-        if (!dragging) return;
+        if (!dragging) return; // only react while a drag is in progress
+        // How far the pointer moved since the last event, in pixels.
         const dx = e.clientX - lx,
           dy = e.clientY - ly;
         lx = e.clientX;
         ly = e.clientY;
         applyView({
           ...view,
-          bearing: view.bearing - dx * 0.28,
+          bearing: view.bearing - dx * 0.28, // sideways drag spins the compass
+          // up/down drag tilts; Math.min/Math.max keep pitch within 0-60 degrees
           pitch: Math.min(60, Math.max(0, view.pitch + dy * 0.28)),
         });
       });
+      // Releasing or losing the pointer ends the drag.
       addEventListener("pointerup", () => (dragging = false));
       addEventListener("pointercancel", () => (dragging = false));
 
+      // Grab the two mode buttons and the hint text so we can update them.
+      // `document.getElementById("m-orbit")` finds <... id="m-orbit"> on the page.
       const btnOrbit = document.getElementById("m-orbit");
       const btnPan = document.getElementById("m-pan");
       const hintEl = document.getElementById("hint");
+      // Switch modes: remember the choice, highlight the active button (the "on"
+      // CSS class), update the hint line, and tell deck.gl the new gesture rules.
       function setMode(m) {
         mode = m;
         dragging = false;
-        btnOrbit.classList.toggle("on", m === "orbit");
+        btnOrbit.classList.toggle("on", m === "orbit"); // add "on" only to the active one
         btnPan.classList.toggle("on", m === "pan");
         hintEl.textContent =
           m === "orbit"
@@ -852,11 +970,15 @@
             : "drag to pan · scroll to zoom";
         deckgl.setProps({ controller: controllerFor(m) });
       }
+      // `.onclick = fn` runs fn when the button is clicked.
       btnOrbit.onclick = () => setMode("orbit");
       btnPan.onclick = () => setMode("pan");
 
-      // Auto-spin only while untouched. Once the user interacts, the controller and
-      // the orbit handler own the view; the loop stops driving it, so nothing fights.
+      // A gentle auto-spin so the map isn't static on arrival. `requestAnimationFrame`
+      // asks the browser to call `tick` again just before the next repaint (~60
+      // times a second); because tick asks again at the end, it forms a loop. It
+      // nudges the compass a little each frame - but ONLY while `touched` is false,
+      // so the moment the user grabs the map, the auto-spin bows out.
       function tick() {
         if (!touched)
           applyView({ ...view, bearing: (view.bearing + 0.06) % 360 });
@@ -865,20 +987,35 @@
       requestAnimationFrame(tick);
 
       // --- Populate the left stats panel from STATS --------------------------
+      // The panel's HTML (up in <body>) has empty "…" placeholders; this section
+      // fills them with real numbers from the STATS object in city_extras.js.
+      // Two little helpers used throughout:
+      //   fmt: 683788 -> "683,788" (adds thousands separators for readability)
+      //   pct: turn a part / whole into a rounded percentage, e.g. 1 -> 100
       const fmt = (n) => n.toLocaleString();
       const pct = (a, b) => Math.round((a / b) * 100);
 
-      // Legend: state how wide one hexagon is (corner to corner ≈ 2 × radius).
+      // Set an element's text. `.textContent = "..."` replaces what's on screen.
+      // The `${...}` inside backtick `...` quotes is a template literal: it drops
+      // a value into a string. Here we report how wide one hexagon is.
       document.getElementById("legend-size").textContent =
         `each cell ≈ ${CELL_RADIUS * 2} m across`;
 
       document.getElementById("p-total").textContent = fmt(STATS.total);
       document.getElementById("p-species").textContent = STATS.distinctSpecies;
 
+      // Capitalise the first letter of every word: "pin oak" -> "Pin Oak".
+      // (The regex \b\w matches the first letter of each word.)
       function titleCase(s) {
         return s.replace(/\b\w/g, (c) => c.toUpperCase());
       }
-      // Top 5 most common species, as a ranked sublist.
+      // Top 5 most common species, as a ranked sub-list. The pattern below appears
+      // several times in this section:
+      //   .slice(0, 5)  take the first five items
+      //   .map(...)     turn each item into a line of HTML
+      //   .join("")     glue those lines into one string
+      //   .innerHTML =  drop that string of HTML into the page
+      // `(s, i) =>` gives us each species `s` and its position `i` (starting at 0).
       document.getElementById("p-species-list").innerHTML = STATS.topSpecies
         .slice(0, 5)
         .map(
@@ -891,8 +1028,9 @@
         )
         .join("");
 
-      // Condition: a small stacked bar (Good / Fair / Poor) plus a legend.
-      // Condition: stacked bar plus legend.
+      // Tree condition, shown as one horizontal bar split into coloured segments
+      // (Good / Fair / Poor / dead) plus a matching key. HCOL maps each condition
+      // name to the colour used for its segment.
       const HCOL = {
         Good: "#22c55e",
         Fair: "#eab308",
@@ -900,8 +1038,12 @@
         "💀": "#4b5563", // dead trees + stumps (no health rating because they aren't alive)
       };
 
+      // STATS.health only counts living, rated trees. `.reduce` adds up their
+      // counts into one running total (`sum` starts at 0 and accumulates `h.n`)...
       const recorded = STATS.health.reduce((sum, h) => sum + h.n, 0);
 
+      // ...so every remaining tree is dead/a stump. We build a new `health` list:
+      // the rated conditions (spread in with `...`) plus one 💀 entry for the rest.
       const health = [
         ...STATS.health,
         {
@@ -910,6 +1052,8 @@
         },
       ];
 
+      // The bar: one <span> per condition, each as wide as that condition's share
+      // of all trees. `.toFixed(1)` rounds the percentage to one decimal place.
       document.getElementById("p-health-bar").innerHTML = health
         .map(
           (h) =>
@@ -917,14 +1061,18 @@
         )
         .join("");
 
-      document.getElementById('p-health-key').innerHTML = health.map(h =>
-        `<span>
+      // The key below the bar: a coloured swatch, the name, and the percentage.
+      document.getElementById("p-health-key").innerHTML = health
+        .map(
+          (h) =>
+            `<span>
           <i style="background:${HCOL[h.name]}"></i>
           <span>${h.name}</span>
           <span class="pct">(${pct(h.n, STATS.total)}%\)</span>
-        </span>`
-      ).join('');
-      // Extra facts.
+        </span>`,
+        )
+        .join("");
+      // A few more single-number facts for the panel.
       document.getElementById("p-alive").textContent =
         `${pct(STATS.alive, STATS.total)}%`;
       document.getElementById("p-trunk").textContent =
@@ -934,8 +1082,12 @@
         STATS.population / STATS.total,
       );
 
-      // Mini sorted bar chart of trees per borough, shaded with the same green ramp.
+      // Mini bar chart of trees per borough, shaded with the same green ramp as
+      // the map. STATS.boroughs is already sorted largest-first, so the first
+      // entry (`[0]`) is the biggest; every bar's width is measured against it.
       const maxB = STATS.boroughs[0].n;
+      // Pick a ramp colour for bar number `i` and format it as a CSS "rgb(r,g,b)"
+      // string. Leaders get the brighter (lime) end, matching the tallest towers.
       const barColor = (i) => {
         const c = GREENS[Math.max(1, GREENS.length - 1 - i)]; // brighter for the leaders (more trees = lime, like the map)
         return `rgb(${c[0]},${c[1]},${c[2]})`;
@@ -954,8 +1106,10 @@
       // --- Collapsible stats panel -------------------------------------------
       // The toggle slides the panel in and out at any screen size.
       const panelToggle = document.getElementById("panel-toggle");
-      // Below this width the panel floats over the map as an overlay; above it,
-      // it sits alongside the map. It can be collapsed either way.
+      // `matchMedia` lets JavaScript ask the same width question the CSS asks.
+      // `narrow.matches` is true whenever the window is 720px wide or less. Below
+      // that width the panel floats over the map as an overlay; above it, the
+      // panel sits alongside the map. It can be collapsed either way.
       const narrow = window.matchMedia("(max-width: 720px)");
       const setPanelOpen = (open) => {
         document.body.classList.toggle("panel-open", open);
