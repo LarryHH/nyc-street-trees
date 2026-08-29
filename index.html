@@ -41,7 +41,7 @@
       }
       #title {
         position: fixed;
-        left: 24px;
+        left: 66px;
         top: 20px;
         z-index: 10;
         color: #fff;
@@ -112,6 +112,24 @@
         backdrop-filter: blur(7px);
         -webkit-backdrop-filter: blur(7px);
         box-shadow: 0 6px 24px #0007;
+        /* Collapsed by default: slid off to the left and faded out. The
+       panel-open class (set per screen size on load, and by the toggle) slides
+       it back in. */
+        transform: translateX(calc(-100% - 40px));
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          transform 0.28s ease,
+          opacity 0.28s ease;
+      }
+      body.panel-open #panel {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+      /* Skip the slide on the very first paint so the panel doesn't fly in. */
+      body.panel-preload #panel {
+        transition: none;
       }
       #panel .big {
         font-size: 26px;
@@ -346,10 +364,11 @@
         text-decoration: underline;
       }
 
-      /* Button that opens the stats panel on small screens. Hidden on wide
-     screens, where the panel is always visible. */
+      /* Button that collapses / expands the stats panel. Always visible; on
+     narrow screens the panel starts collapsed, on wide screens it starts open,
+     and either way this toggles it. */
       #panel-toggle {
-        display: none;
+        display: flex;
         position: fixed;
         left: 14px;
         top: 14px;
@@ -398,11 +417,7 @@
       /* Small screens: hide the panel behind the toggle, shrink the top bar so
      the title and legend can't collide, and lay the credits along the bottom. */
       @media (max-width: 720px) {
-        #panel-toggle {
-          display: flex;
-        }
         #title {
-          left: 66px;
           top: 16px;
           font-size: 15px;
         }
@@ -431,11 +446,6 @@
           max-height: calc(100vh - 150px);
           overflow-y: auto;
           overflow-x: hidden;
-          transform: translateX(calc(-100% - 24px));
-          transition: transform 0.25s ease;
-        }
-        body.panel-open #panel {
-          transform: translateX(0);
         }
         #hint {
           display: none;
@@ -938,9 +948,12 @@
         )
         .join("");
 
-      // --- Small-screen stats panel toggle -----------------------------------
-      // On narrow screens the panel is hidden; this button slides it in and out.
+      // --- Collapsible stats panel -------------------------------------------
+      // The toggle slides the panel in and out at any screen size.
       const panelToggle = document.getElementById("panel-toggle");
+      // Below this width the panel floats over the map as an overlay; above it,
+      // it sits alongside the map. It can be collapsed either way.
+      const narrow = window.matchMedia("(max-width: 720px)");
       const setPanelOpen = (open) => {
         document.body.classList.toggle("panel-open", open);
         panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
@@ -949,11 +962,22 @@
           open ? "Hide data panel" : "Show data panel",
         );
       };
+      // Start open on wide screens, collapsed on narrow ones — but suppress the
+      // slide for this first paint so the panel doesn't fly in on load.
+      document.body.classList.add("panel-preload");
+      setPanelOpen(!narrow.matches);
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          document.body.classList.remove("panel-preload"),
+        ),
+      );
       panelToggle.addEventListener("click", () =>
         setPanelOpen(!document.body.classList.contains("panel-open")),
       );
-      // Tapping the map, i.e. anything outside the panel and its button, closes it.
+      // On narrow screens the panel is an overlay, so tapping the map closes it.
+      // On wide screens it's a fixed sidebar, so a map click leaves it alone.
       document.addEventListener("click", (e) => {
+        if (!narrow.matches) return;
         if (!document.body.classList.contains("panel-open")) return;
         if (e.target.closest("#panel, #panel-toggle")) return;
         setPanelOpen(false);
