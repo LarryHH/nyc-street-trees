@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A city of trees</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #070b0e;
+        font-family: -apple-system, system-ui, sans-serif;
+      }
+      /* Overlays that turn the empty dark into designed atmosphere. Both sit above
+     the map canvas and below the text UI, and ignore the mouse. */
+      #sky {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        background: linear-gradient(
+          180deg,
+          rgba(30, 58, 74, 0.42) 0%,
+          rgba(14, 28, 36, 0.12) 34%,
+          transparent 55%
+        );
+      }
+      #vignette {
+        position: fixed;
+        inset: 0;
+        z-index: 6;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 80% 75% at 50% 56%,
+          transparent 46%,
+          rgba(0, 0, 0, 0.3) 74%,
+          rgba(0, 0, 0, 0.62) 100%
+        );
+      }
+      #title {
+        position: fixed;
+        left: 24px;
+        top: 20px;
+        z-index: 10;
+        color: #fff;
+        font-weight: 600;
+        font-size: 21px;
+        line-height: 1.25;
+        text-shadow: 0 1px 8px #000;
+      }
+      #title span {
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: #9fd6b4;
+        margin-top: 5px;
+      }
+      #stat {
+        position: fixed;
+        left: 24px;
+        bottom: 20px;
+        z-index: 10;
+        color: #9df0c0;
+        font-weight: 600;
+        font-size: 14px;
+        text-shadow: 0 1px 6px #000;
+      }
+      #stat small {
+        display: block;
+        color: #6f8f7d;
+        font-weight: 500;
+        margin-top: 3px;
+      }
+      #p-health-key {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+
+      #p-health-key > span {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        grid-template-rows: auto auto;
+        column-gap: 5px;
+        align-items: center;
+      }
+
+      #p-health-key i {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+      }
+
+      #p-health-key .pct {
+        grid-column: 2;
+        opacity: 0.85;
+      }
+      /* Left-side stats panel */
+      #panel {
+        position: fixed;
+        left: 24px;
+        top: 92px;
+        z-index: 10;
+        width: 258px;
+        color: #eafff2;
+        background: rgba(9, 20, 15, 0.62);
+        border: 1px solid rgba(120, 200, 150, 0.22);
+        border-radius: 12px;
+        padding: 16px 18px;
+        backdrop-filter: blur(7px);
+        -webkit-backdrop-filter: blur(7px);
+        box-shadow: 0 6px 24px #0007;
+      }
+      #panel .big {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+      #panel .big span {
+        color: #9fd6b4;
+      }
+      #panel .cap {
+        font-size: 12px;
+        color: #8fb8a2;
+        margin: 2px 0 14px;
+      }
+      #panel .h {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #7fae92;
+        margin: 0 0 7px;
+      }
+      #panel .brow {
+        display: grid;
+        grid-template-columns: 74px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        margin: 5px 0;
+        font-size: 12px;
+      }
+      #panel .brow .bn {
+        color: #cfeadd;
+      }
+      #panel .brow .bt {
+        height: 9px;
+        background: rgba(255, 255, 255, 0.07);
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      #panel .brow .bf {
+        display: block;
+        height: 100%;
+        border-radius: 5px;
+      }
+      #panel .brow .bv {
+        color: #9fd6b4;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      #panel .hbar {
+        display: flex;
+        height: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 2px 0 6px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      }
+      #panel .hbar span {
+        display: block;
+        height: 100%;
+      }
+      #panel .hkey {
+        display: flex;
+        gap: 13px;
+        font-size: 11px;
+        color: #a9c9ba;
+      }
+      #panel .hkey i {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        margin-right: 5px;
+        vertical-align: -1px;
+      }
+      #panel .facts {
+        margin-top: 14px;
+        border-top: 1px solid rgba(120, 200, 150, 0.16);
+        padding-top: 12px;
+        font-size: 12.5px;
+        color: #cfeadd;
+      }
+      #panel .fact {
+        position: relative;
+        padding-left: 15px;
+        margin: 7px 0;
+        line-height: 1.4;
+      }
+      #panel .fact::before {
+        content: "";
+        position: absolute;
+        left: 1px;
+        top: 6px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #4ade80;
+      }
+      #panel .facts b {
+        color: #bef264;
+      }
+      #panel .sub {
+        list-style: none;
+        margin: 6px 0 2px;
+        padding: 0;
+      }
+      #panel .sub li {
+        display: grid;
+        grid-template-columns: 14px 1fr auto;
+        align-items: baseline;
+        gap: 7px;
+        font-size: 11.5px;
+        color: #b6d4c5;
+        padding: 2px 0;
+      }
+      #panel .sub li .rk {
+        color: #6f9a82;
+        font-variant-numeric: tabular-nums;
+      }
+      #panel .sub li .vv {
+        color: #9fd6b4;
+        font-variant-numeric: tabular-nums;
+      }
+      #panel .src {
+        margin-top: 12px;
+        font-size: 11px;
+        color: #6f8f7d;
+      }
+      #legend {
+        position: fixed;
+        right: 22px;
+        top: 20px;
+        z-index: 10;
+        color: #cfeadd;
+        font-size: 12px;
+        line-height: 1.5;
+        text-align: right;
+        text-shadow: 0 1px 4px #000;
+      }
+      #legend .bar {
+        height: 10px;
+        width: 168px;
+        margin: 5px 0 3px auto;
+        border-radius: 5px;
+        background: linear-gradient(
+          90deg,
+          #082018,
+          #0e4a2d,
+          #106634,
+          #22c55e,
+          #4ade80,
+          #bef264
+        );
+      }
+      #legend .ends {
+        display: flex;
+        justify-content: space-between;
+        width: 168px;
+        margin-left: auto;
+        color: #8fb8a2;
+      }
+      #modes {
+        position: fixed;
+        right: 22px;
+        bottom: 20px;
+        z-index: 10;
+        display: flex;
+        gap: 0;
+        border: 1px solid #2c6b4c;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 10px #0008;
+      }
+      #modes button {
+        border: 0;
+        background: #0d1f17;
+        color: #bfe6cf;
+        font:
+          600 13px/1 -apple-system,
+          system-ui,
+          sans-serif;
+        padding: 9px 16px;
+        cursor: pointer;
+      }
+      #modes button.on {
+        background: #22c55e;
+        color: #06130c;
+      }
+      #modes button + button {
+        border-left: 1px solid #2c6b4c;
+      }
+      #hint {
+        position: fixed;
+        right: 22px;
+        bottom: 60px;
+        z-index: 10;
+        color: #8fb8a2;
+        font-size: 12px;
+        text-align: right;
+        text-shadow: 0 1px 4px #000;
+      }
+    </style>
+    <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+    <script src="trees_data.js"></script>
+    <script src="city_extras.js"></script>
+  </head>
+  <body>
+    <div id="sky"></div>
+    <div id="vignette"></div>
+    <div id="title">
+      Every street tree in New York
+      <span>height &amp; colour = trees per block</span>
+    </div>
+    <div id="panel">
+      <div class="big"><span id="p-total">…</span> trees</div>
+      <div class="cap">counted block by block in the city's census</div>
+      <div class="h">Trees by borough</div>
+      <div id="p-bars"></div>
+      <div class="h" style="margin-top: 14px">Tree Health</div>
+      <div id="p-health-bar" class="hbar"></div>
+      <div id="p-health-key" class="hkey"></div>
+      <div class="facts">
+        <div class="fact">
+          <b id="p-species">…</b> species in all, the 5 most common:
+          <ol class="sub" id="p-species-list"></ol>
+        </div>
+        <div class="fact"><b id="p-alive">…</b> alive and standing</div>
+        <div class="fact">
+          average trunk <b id="p-trunk">…</b> across
+        </div>
+        <div class="fact">
+          about <b id="p-percap">…</b> street tree for every
+          <b id="p-percap-n">…</b> New Yorkers
+        </div>
+      </div>
+      <div class="src">NYC Street Tree Census, 2015</div>
+    </div>
+    <div id="legend">
+      trees in each cell
+      <div class="bar"></div>
+      <div class="ends"><span>few</span><span>many</span></div>
+    </div>
+    <div id="hint">drag to pan · scroll to zoom</div>
+    <div id="modes">
+      <button id="m-pan" class="on">Pan</button
+      ><button id="m-orbit">Orbit</button>
+    </div>
+    <script>
+      const {
+        DeckGL,
+        MapView,
+        HexagonLayer,
+        TileLayer,
+        BitmapLayer,
+        GeoJsonLayer,
+        TextLayer,
+        AmbientLight,
+        DirectionalLight,
+        LightingEffect,
+      } = deck;
+
+      const GREENS = [
+        [8, 32, 24],
+        [14, 74, 45],
+        [16, 101, 52],
+        [34, 153, 84],
+        [74, 222, 128],
+        [190, 242, 100],
+      ];
+
+      // Lighting: soft ambient fill plus a key light that casts shadows, so the
+      // columns read as solid 3-D towers rather than flat bars.
+      const lighting = new LightingEffect({
+        ambient: new AmbientLight({ color: [255, 255, 255], intensity: 1.0 }),
+        key: new DirectionalLight({
+          color: [255, 255, 255],
+          intensity: 2.4,
+          direction: [-1, -3, -1],
+          _shadow: true,
+        }),
+        fill: new DirectionalLight({
+          color: [190, 215, 255],
+          intensity: 0.9,
+          direction: [1, -1, 1],
+        }),
+      });
+      lighting.shadowColor = [0, 0, 0, 0.45];
+
+      // --- interaction modes -------------------------------------------------
+      // Orbit: a plain drag rotates + tilts (handled below). Pan: a plain drag
+      // pans (deck's native behaviour). Scroll zooms in both.
+      let mode = "pan";
+      const controllerFor = (m) =>
+        m === "pan"
+          ? {
+              scrollZoom: true,
+              dragPan: true,
+              dragRotate: true,
+              doubleClickZoom: true,
+              touchZoom: true,
+              touchRotate: true,
+              inertia: false,
+            }
+          : {
+              scrollZoom: true,
+              dragPan: false,
+              dragRotate: false,
+              doubleClickZoom: true,
+              touchZoom: true,
+              touchRotate: false,
+              inertia: false,
+            };
+
+      // Fence the camera so the map always fills the frame and the void stays off-screen.
+      const PAN = {
+        minLng: -74.26,
+        maxLng: -73.68,
+        minLat: 40.53,
+        maxLat: 40.9,
+      };
+      const LIMITS = { minZoom: 9.9, maxZoom: 12.5, minPitch: 0, maxPitch: 60 }; // controller enforces these
+      // Normalise any view: re-attach the limits and clamp the pan into bounds.
+      const norm = (v) => ({
+        ...v,
+        ...LIMITS,
+        longitude: Math.min(PAN.maxLng, Math.max(PAN.minLng, v.longitude)),
+        latitude: Math.min(PAN.maxLat, Math.max(PAN.minLat, v.latitude)),
+      });
+      // Single place that pushes a view to the screen, so nothing fights over it.
+      const applyView = (v) => {
+        view = norm(v);
+        deckgl.setProps({ viewState: view });
+      };
+
+      let view = {
+          longitude: -73.94,
+          latitude: 40.7,
+          zoom: 10.6,
+          bearing: 22,
+          pitch: 50,
+          ...LIMITS,
+        },
+        touched = false;
+      const deckgl = new DeckGL({
+        parent: document.body,
+        views: new MapView(),
+        initialViewState: view,
+        controller: controllerFor(mode),
+        effects: [lighting],
+        parameters: { clearColor: [0.027, 0.043, 0.055, 1] }, // dark cool ground behind the map
+        onViewStateChange: ({ viewState }) => {
+          touched = true;
+          applyView(viewState);
+        }, // apply once, fenced, no per-frame re-apply
+        getTooltip: ({ object }) =>
+          object &&
+          object.points && {
+            html: `<b>${object.points.length.toLocaleString()}</b> trees in this cell`,
+            style: {
+              background: "#0a2016",
+              color: "#eafff2",
+              fontSize: "12px",
+              borderRadius: "6px",
+              padding: "6px 9px",
+            },
+          },
+      });
+
+      // A minimal dark, label-light street map (Esri Dark Gray Canvas, no API key),
+      // sitting flat under the towers. Note Esri's tile path is {z}/{y}/{x}.
+      const NYC_EXTENT = [-75.3, 39.8, -72.6, 41.7]; // generous, but bounded so tilted views don't chase the horizon
+      const basemap = new TileLayer({
+        id: "basemap",
+        data: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        minZoom: 0,
+        maxZoom: 16,
+        tileSize: 256,
+        opacity: 0.65,
+        refinementStrategy: "best-available", // show a coarser tile until the sharp one loads (blur->sharp, not blank->pop)
+        maxCacheSize: 900, // keep lots of tiles so panning back within bounds never refetches
+        maxRequests: 8,
+        extent: NYC_EXTENT, // don't try to load the whole horizon when tilted
+        renderSubLayers: (props) => {
+          const t = props.tile;
+          const b = t.bbox
+            ? [t.bbox.west, t.bbox.south, t.bbox.east, t.bbox.north]
+            : [
+                t.boundingBox[0][0],
+                t.boundingBox[0][1],
+                t.boundingBox[1][0],
+                t.boundingBox[1][1],
+              ];
+          return new BitmapLayer(props, {
+            data: null,
+            image: props.data,
+            bounds: b,
+          });
+        },
+      });
+
+      // Outlines on the ground: borough borders (medium), and the whole city
+      // coastline (strongest) so New York reads as one shape.
+      const boroughOutline = new GeoJsonLayer({
+        id: "boroughs",
+        data: BOROUGHS,
+        stroked: true,
+        filled: false,
+        getLineColor: [140, 214, 172, 165],
+        lineWidthUnits: "pixels",
+        getLineWidth: 1.6,
+      });
+      const cityGlow = new GeoJsonLayer({
+        id: "city-glow",
+        data: CITY,
+        stroked: true,
+        filled: false,
+        getLineColor: [150, 235, 185, 70],
+        lineWidthUnits: "pixels",
+        getLineWidth: 7, // soft halo
+      });
+      const cityOutline = new GeoJsonLayer({
+        id: "city",
+        data: CITY,
+        stroked: true,
+        filled: false,
+        getLineColor: [198, 244, 214, 240],
+        lineWidthUnits: "pixels",
+        getLineWidth: 2.6,
+      });
+      const BOROUGH_LABELS = [
+        { name: "QUEENS", p: [-73.82, 40.71] },
+        { name: "BROOKLYN", p: [-73.95, 40.652] },
+        { name: "STATEN ISLAND", p: [-74.15, 40.58] },
+        { name: "THE BRONX", p: [-73.865, 40.845] },
+        { name: "MANHATTAN", p: [-73.968, 40.782] },
+      ];
+      const boroughLabels = new TextLayer({
+        id: "borough-labels",
+        data: BOROUGH_LABELS,
+        getPosition: (d) => d.p,
+        getText: (d) => d.name,
+        getSize: 12,
+        getColor: [222, 245, 230, 210],
+        fontWeight: 700,
+        getTextAnchor: "middle",
+        getAlignmentBaseline: "center",
+        billboard: true,
+        fontSettings: { sdf: true },
+        outlineWidth: 3,
+        outlineColor: [3, 10, 7, 230],
+        parameters: { depthTest: false }, // draw over the towers instead of being hidden behind them
+      });
+
+      deckgl.setProps({
+        layers: [
+          basemap,
+          cityGlow,
+          boroughOutline,
+          cityOutline,
+          new HexagonLayer({
+            id: "trees",
+            data: TREES,
+            getPosition: (d) => d,
+            radius: 130, // each hexagon covers ~130 m
+            coverage: 0.92,
+            elevationScale: 11,
+            extruded: true,
+            colorRange: GREENS,
+            material: {
+              ambient: 0.64,
+              diffuse: 0.6,
+              shininess: 32,
+              specularColor: [45, 60, 50],
+            },
+            pickable: true,
+          }),
+          boroughLabels,
+        ],
+      });
+
+      // Orbit drag: I own the view, so I turn a left-drag into bearing + pitch.
+      let dragging = false,
+        lx = 0,
+        ly = 0;
+      addEventListener("pointerdown", (e) => {
+        if (mode !== "orbit" || e.button !== 0) return;
+        if (e.target.closest("#modes,#legend,#title,#panel,#hint")) return; // let the UI work
+        dragging = true;
+        lx = e.clientX;
+        ly = e.clientY;
+        touched = true;
+      });
+      addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - lx,
+          dy = e.clientY - ly;
+        lx = e.clientX;
+        ly = e.clientY;
+        applyView({
+          ...view,
+          bearing: view.bearing - dx * 0.28,
+          pitch: Math.min(60, Math.max(0, view.pitch + dy * 0.28)),
+        });
+      });
+      addEventListener("pointerup", () => (dragging = false));
+      addEventListener("pointercancel", () => (dragging = false));
+
+      const btnOrbit = document.getElementById("m-orbit");
+      const btnPan = document.getElementById("m-pan");
+      const hintEl = document.getElementById("hint");
+      function setMode(m) {
+        mode = m;
+        dragging = false;
+        btnOrbit.classList.toggle("on", m === "orbit");
+        btnPan.classList.toggle("on", m === "pan");
+        hintEl.textContent =
+          m === "orbit"
+            ? "drag to orbit · scroll to zoom"
+            : "drag to pan · scroll to zoom";
+        deckgl.setProps({ controller: controllerFor(m) });
+      }
+      btnOrbit.onclick = () => setMode("orbit");
+      btnPan.onclick = () => setMode("pan");
+
+      // Auto-spin only while untouched. Once the user interacts, the controller and
+      // the orbit handler own the view; the loop stops driving it, so nothing fights.
+      function tick() {
+        if (!touched)
+          applyView({ ...view, bearing: (view.bearing + 0.06) % 360 });
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+
+      // --- Populate the left stats panel from STATS --------------------------
+      const fmt = (n) => n.toLocaleString();
+      const pct = (a, b) => Math.round((a / b) * 100);
+
+      document.getElementById("p-total").textContent = fmt(STATS.total);
+      document.getElementById("p-species").textContent = STATS.distinctSpecies;
+
+      function titleCase(s) {
+        return s.replace(/\b\w/g, (c) => c.toUpperCase());
+      }
+      // Top 5 most common species, as a ranked sublist.
+      document.getElementById("p-species-list").innerHTML = STATS.topSpecies
+        .slice(0, 5)
+        .map(
+          (s, i) =>
+            `<li>
+    <span class="rk">${i + 1}</span>
+    <span class="nm">${titleCase(s.name)}</span>
+    <span class="vv">${pct(s.n, STATS.total)}%</span>
+  </li>`,
+        )
+        .join("");
+
+      // Condition: a small stacked bar (Good / Fair / Poor) plus a legend.
+      // Condition: stacked bar plus legend.
+      const HCOL = {
+        Good: "#22c55e",
+        Fair: "#eab308",
+        Poor: "#ef6a4d",
+        "💀": "#4b5563", // dead trees + stumps (no health rating because they aren't alive)
+      };
+
+      const recorded = STATS.health.reduce((sum, h) => sum + h.n, 0);
+
+      const health = [
+        ...STATS.health,
+        {
+          name: "💀",
+          n: STATS.total - recorded,
+        },
+      ];
+
+      document.getElementById("p-health-bar").innerHTML = health
+        .map(
+          (h) =>
+            `<span style="width:${((h.n / STATS.total) * 100).toFixed(1)}%;background:${HCOL[h.name]}"></span>`,
+        )
+        .join("");
+
+      document.getElementById('p-health-key').innerHTML = health.map(h =>
+        `<span>
+          <i style="background:${HCOL[h.name]}"></i>
+          <span>${h.name}</span>
+          <span class="pct">(${pct(h.n, STATS.total)}%\)</span>
+        </span>`
+      ).join('');
+      // Extra facts.
+      document.getElementById("p-alive").textContent =
+        `${pct(STATS.alive, STATS.total)}%`;
+      document.getElementById("p-trunk").textContent =
+        `~${Math.round(STATS.avgDbh)} in (${Math.round(STATS.avgDbh * 2.54)} cm)`;
+      document.getElementById("p-percap").textContent = "1";
+      document.getElementById("p-percap-n").textContent = Math.round(
+        STATS.population / STATS.total,
+      );
+
+      // Mini sorted bar chart of trees per borough, shaded with the same green ramp.
+      const maxB = STATS.boroughs[0].n;
+      const barColor = (i) => {
+        const c = GREENS[Math.max(1, GREENS.length - 1 - i)]; // brighter for the leaders (more trees = lime, like the map)
+        return `rgb(${c[0]},${c[1]},${c[2]})`;
+      };
+      document.getElementById("p-bars").innerHTML = STATS.boroughs
+        .map(
+          (b, i) => `
+  <div class="brow">
+    <span class="bn">${b.name}</span>
+    <span class="bt"><span class="bf" style="width:${((b.n / maxB) * 100).toFixed(0)}%;background:${barColor(i)}"></span></span>
+    <span class="bv">${fmt(b.n)}</span>
+  </div>`,
+        )
+        .join("");
+    </script>
+  </body>
+</html>
